@@ -5,7 +5,9 @@ import numpy as np
 from torchvision.models.video import swin3d_t, Swin3D_T_Weights
 from utils.label_map import LABELS
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = "cpu"
+
+torch.set_num_threads(1)
 
 # ================= MODEL =================
 class SignModel(nn.Module):
@@ -32,14 +34,18 @@ class SignModel(nn.Module):
 MODEL_PATH = "model/best_model.pth"
 NUM_CLASSES = 226
 
+model = None
+
 def load_model():
     model = SignModel(NUM_CLASSES)
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
-    model = model.to(DEVICE)
-    model.eval()
-    return model
 
-model = load_model()
+    state_dict = torch.load(MODEL_PATH, map_location=DEVICE)
+
+    model.load_state_dict(state_dict)
+    model.to(DEVICE)
+    model.eval()
+
+    return model
 
 # ================= PREPROCESS =================
 MEAN = np.array([0.485, 0.456, 0.406])
@@ -49,7 +55,11 @@ def preprocess_video(video_path, max_frames=16):
     cap = cv2.VideoCapture(video_path)
 
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    indices = np.linspace(0, total-1, max_frames).astype(int)
+
+    if total <= 0:
+        raise ValueError("Invalid video")
+
+    indices = np.linspace(0, total - 1, max_frames).astype(int)
 
     frames = []
 
@@ -69,13 +79,23 @@ def preprocess_video(video_path, max_frames=16):
 
     cap.release()
 
+    if len(frames) < max_frames:
+        while len(frames) < max_frames:
+            frames.append(frames[-1])
+
     frames = np.array(frames)
-    frames = torch.tensor(frames).permute(3,0,1,2).float()
+    frames = torch.tensor(frames).permute(3, 0, 1, 2).float()
 
     return frames.unsqueeze(0)
 
 # ================= PREDICT =================
 def predict(video_path):
+    global model
+
+    if model is None:
+        print("Loading model...")
+        model = load_model()
+
     input_tensor = preprocess_video(video_path).to(DEVICE)
 
     with torch.no_grad():
