@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sign Language AI</title>
+<script src="https://cdn.tailwindcss.com"></script>
+
+<style>
+body { background: black; color: white; }
+.glow { background: radial-gradient(circle at center, rgba(139,92,246,0.8), transparent 70%); }
+.glass {
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.loader {
+    border: 4px solid rgba(255,255,255,0.1);
+    border-top: 4px solid #a855f7;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin { 100% { transform: rotate(360deg); } }
+</style>
+</head>
+
+<body>
+
+<div class="glow h-[420px] flex flex-col items-center justify-center text-center">
+    <h1 class="text-5xl font-bold mb-4">Sign Language Recognition System</h1>
+
+    <input type="file" id="videoInput" class="mb-4">
+    <video id="preview" controls class="hidden w-64 mb-4 rounded-lg"></video>
+
+    <button onclick="uploadVideo()" class="px-6 py-3 bg-purple-600 rounded-lg">
+        Upload & Predict
+    </button>
+</div>
+
+<div id="loader" class="hidden flex justify-center mt-6">
+    <div class="loader"></div>
+</div>
+
+<div class="max-w-4xl mx-auto mt-10 glass p-6 rounded-xl text-center">
+    <h2 class="text-2xl mb-4">Prediction Result</h2>
+
+    <p id="prediction">--</p>
+    <p id="confidence">--</p>
+
+    <div id="top5" class="grid grid-cols-2 md:grid-cols-3 gap-4"></div>
+
+    <button onclick="downloadReport()" class="mt-6 px-6 py-3 bg-green-600 rounded-lg">
+        Download Report
+    </button>
+</div>
+
+<div class="max-w-6xl mx-auto mt-16">
+    <h2 class="text-3xl text-center mb-8">Model Performance</h2>
+
+    <div class="grid md:grid-cols-2 gap-6">
+        {% for graph in graphs %}
+        <div class="glass p-4 rounded-lg">
+            <img src="{{ url_for('static', filename=graph) }}" class="rounded-lg w-full">
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+const videoInput = document.getElementById("videoInput");
+const preview = document.getElementById("preview");
+
+videoInput.addEventListener("change", () => {
+    const file = videoInput.files[0];
+    preview.src = URL.createObjectURL(file);
+    preview.classList.remove("hidden");
+});
+
+async function uploadVideo() {
+    let file = videoInput.files[0];
+
+    document.getElementById("loader").classList.remove("hidden");
+
+    let formData = new FormData();
+    formData.append("video", file);
+
+    let res = await fetch("/upload", { method: "POST", body: formData });
+    let data = await res.json();
+
+    document.getElementById("loader").classList.add("hidden");
+
+    document.getElementById("prediction").innerText = "Prediction: " + data.prediction;
+    document.getElementById("confidence").innerText = "Confidence: " + data.confidence;
+
+    let top5Div = document.getElementById("top5");
+    top5Div.innerHTML = "";
+
+    data.top5.forEach((item, index) => {
+        let card = document.createElement("div");
+        card.className = "glass p-4 rounded-lg";
+
+        card.innerHTML = `
+            <p>Rank ${index + 1}</p>
+            <p>${item}</p>
+        `;
+
+        top5Div.appendChild(card);
+    });
+}
+
+async function downloadReport() {
+    let prediction = document.getElementById("prediction").innerText.replace("Prediction: ", "");
+    let confidence = document.getElementById("confidence").innerText.replace("Confidence: ", "");
+
+    let top5Elements = document.querySelectorAll("#top5 div p:last-child");
+    let top5 = [];
+    top5Elements.forEach(el => top5.push(el.innerText));
+
+    let res = await fetch("/download_report", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ prediction, confidence, top5 })
+    });
+
+    let blob = await res.blob();
+    let url = window.URL.createObjectURL(blob);
+
+    let a = document.createElement("a");
+    a.href = url;
+    a.download = "report.pdf";
+    a.click();
+}
+</script>
+
+</body>
+</html>
